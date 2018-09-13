@@ -49,8 +49,7 @@ class Losses():
             return ((y_hat - y)/ (np.multiply(y_hat,1-y_hat)))
         temp1 = np.multiply(-y,np.log(y_hat))
         temp2 = np.multiply((1-y),np.log(1-y_hat))
-        difference = temp1 - temp2
-        cost = np.sum(difference)
+        cost = np.sum(temp1 - temp2)
         return cost
 
 class Optimizers():
@@ -61,8 +60,8 @@ class Optimizers():
 
         def step(self,weights,bias,dw,db):
             for i in range(len(weights)):
-                weights[i] = weights[i] - (self.learning_rate * dw[i])
-                bias[i] = bias[i] - (self.learning_rate * db[i])
+                weights[i] -= (self.learning_rate * dw[i])
+                bias[i] -= (self.learning_rate * db[i])
             return weights, bias
             
 
