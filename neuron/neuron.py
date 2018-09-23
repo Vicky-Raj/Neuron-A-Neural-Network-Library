@@ -1,3 +1,6 @@
+"""
+@author: vignesh
+"""
 import numpy as np 
 #Layer class for adding layers and activations
 class Layer():
@@ -63,7 +66,69 @@ class Optimizers():
                 weights[i] -= (self.learning_rate * dw[i])
                 bias[i] -= (self.learning_rate * db[i])
             return weights, bias
-            
+    class Adam():
+        def __init__(self,learning_rate=0.001,beta_1=0.9,beta_2=0.999,epsilon=0.00000001):
+            self.learning_rate = learning_rate
+            self.beta_1 = beta_1
+            self.beta_2 = beta_2
+            self.epsilon = epsilon
+            self.t = 1
+            self.vdw = []
+            self.sdw = []
+            self.vdb = []
+            self.sdb = []
+            self.vdw_cor = []
+            self.sdw_cor = []
+            self.vdb_cor = []
+            self.sdb_cor = []
+        def step(self,weights,bias,dw,db):
+            if self.t == 1:
+                self.vdw = [np.asmatrix(np.zeros(w.shape)) for w in dw]
+                self.vdb = [np.asmatrix(np.zeros(b.shape)) for b in db]
+                self.sdw = [np.asmatrix(np.zeros(w.shape)) for w in dw]
+                self.sdb = [np.asmatrix(np.zeros(b.shape)) for b in db]
+                self.vdw_cor = [0 for _ in range(len(dw))]
+                self.vdb_cor = [0 for _ in range(len(db))]
+                self.sdw_cor = [0 for _ in range(len(dw))]
+                self.sdb_cor = [0 for _ in range(len(db))]
+            for i in range(len(weights)):
+                self.vdw[i] = self.beta_1 * self.vdw[i] + (1-self.beta_1) * dw[i]
+                self.vdb[i] = self.beta_1 * self.vdb[i] + (1-self.beta_1) * db[i]
+                self.sdw[i] = self.beta_2 * self.sdw[i] + (1-self.beta_2) * np.power(dw[i],2)
+                self.sdb[i] = self.beta_2 * self.sdb[i] + (1-self.beta_2) * np.power(db[i],2)
+                self.vdw_cor[i] = self.vdw[i] / (1-np.power(self.beta_1,self.t))
+                self.vdb_cor[i] = self.vdb[i] / (1-np.power(self.beta_1,self.t))
+                self.sdw_cor[i] = self.sdw[i] / (1-np.power(self.beta_2,self.t))
+                self.sdb_cor[i] = self.sdb[i] / (1-np.power(self.beta_2,self.t))
+                weights[i] -= self.learning_rate * (self.vdw_cor[i] / (np.sqrt(self.sdw_cor[i])+self.epsilon))
+                bias[i] -= self.learning_rate * (self.vdb_cor[i] / (np.sqrt(self.sdb_cor[i])+self.epsilon))
+            self.t += 1
+            return weights,bias
+    class RMSprop():
+        def __init__(self,learning_rate=0.001,beta=0.999,epsilon=0.00000001):
+            self.learning_rate = learning_rate
+            self.beta = beta
+            self.epsilon = epsilon
+            self.t = 1
+            self.sdw = []
+            self.sdb = []
+            self.sdw_cor = []
+            self.sdb_cor = []
+        def step(self,weights,bias,dw,db):
+            if self.t == 1:
+                self.sdw = [np.asmatrix(np.zeros(w.shape)) for w in dw]
+                self.sdb = [np.asmatrix(np.zeros(b.shape)) for b in db]
+                self.sdw_cor = [0 for _ in range(len(dw))]
+                self.sdb_cor = [0 for _ in range(len(db))]
+            for i in range(len(weights)):
+                self.sdw[i] = self.beta * self.sdw[i] + (1-self.beta) * np.power(dw[i],2)
+                self.sdb[i] = self.beta * self.sdb[i] + (1-self.beta) * np.power(db[i],2)
+                self.sdw_cor[i] = self.sdw[i] / (1-np.power(self.beta,self.t))
+                self.sdb_cor[i] = self.sdb[i] / (1-np.power(self.beta,self.t))
+                weights[i] -= self.learning_rate * (dw[i] / (np.sqrt(self.sdw_cor[i])+self.epsilon))
+                bias[i] -= self.learning_rate * (db[i]/(np.sqrt(self.sdb_cor[i])+self.epsilon))
+            self.t += 1
+            return weights,bias
 
 class Neuron(Activations,Losses):
     #Initializing variables
@@ -85,6 +150,20 @@ class Neuron(Activations,Losses):
         #Activations list
         self.act_dict = {'sigmoid':super().sigmoid, 'relu':super().relu, 'tanh':super().tanh}
         self.loss_dict = {'sse':super().sse,'binary_crossentropy':super().binary_crossentropy}
+    
+    def split_data(self,X,batch_size):
+        self.start = 0
+        self.end = batch_size
+        self.splited_data = []
+        while True:
+            if self.end < X.shape[1]:
+                self.splited_data.append(X[:,self.start:self.end])
+                self.start = self.end
+                self.end += batch_size
+            else:
+                self.splited_data.append(X[:,self.start:X.shape[1]+1])
+                break
+        return self.splited_data
     #Computing the error of the model using the chosen error fucntion
     def compute_error(self,y):
         self.error = self.loss_dict.get(self.loss)(y,self.activations[-1])
@@ -145,17 +224,30 @@ class Neuron(Activations,Losses):
         print(self.test_activations[-1])
 
     #Fitting the neural network on training set
-    def fit(self, X, y):
+    def fit(self,X,y,batch_size,print_error=False):
         self.z = [0 for x in range(len(self.layers))]
         self.activations = [0 for x in range(len(self.layers)+1)]
-        self.activations[0] = X.T
-        self.y = y.T
         self.dz = [0 for x in range(len(self.layers))]
         self.dw = [0 for x in range(len(self.layers))]
         self.db = [0 for x in range(len(self.layers))]
         self.init_weights()
         self.init_bias()
-        for _ in range(self.epochs):
-            self.forward_prop()
-            self.compute_error(self.y)
-            self.back_prop(self.y)
+        if not batch_size is None and batch_size < X.T.shape[1] and batch_size > 0: 
+            self.X = self.split_data(X.T,batch_size)
+            self.y = self.split_data(y.T,batch_size)
+            for _ in range(self.epochs):
+                for x_temp,y_temp in zip(self.X,self.y):
+                    self.activations[0] = x_temp 
+                    self.forward_prop()
+                    self.back_prop(y_temp)
+                if print_error:
+                    self.activations[0] = X.T
+                    self.forward_prop()
+                    self.compute_error(y.T)
+        else:
+            self.activations[0] = X.T
+            self.y = y.T 
+            for _ in range(self.epochs):
+                self.forward_prop()
+                self.compute_error(self.y)
+                self.back_prop(self.y)
