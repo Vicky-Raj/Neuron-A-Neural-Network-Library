@@ -1,6 +1,7 @@
 """
 @author: vignesh
 """
+#Importing numpy library for math operations
 import numpy as np 
 #Layer class for adding layers and activations
 class Layer():
