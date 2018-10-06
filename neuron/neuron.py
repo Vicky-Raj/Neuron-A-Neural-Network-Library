@@ -2,8 +2,11 @@
 @author: vignesh
 """
 #Importing numpy library for math operations
-import numpy as np 
+import numpy as np
+#Importing pickle for saving and loading model
+import pickle
 #Layer class for adding layers and activations
+
 class Layer():
     def __init__(self, neurons, activation):
         self.neurons = neurons
@@ -166,9 +169,31 @@ class Neuron(Activations,Losses):
                 break
         return self.splited_data
     #Computing the error of the model using the chosen error fucntion
-    def compute_error(self,y):
-        self.error = self.loss_dict.get(self.loss)(y,self.activations[-1])
-        print('error: {}'.format(self.error))
+    def compute_error(self,y,y_hat):
+        self.error = self.loss_dict.get(self.loss)(y,y_hat)
+        return self.error
+
+    def compute_accuracy(self,y,y_hat):
+        self.no_false = np.power(y-y_hat,2)
+        self.accuracy = ((y.size - np.count_nonzero(self.no_false == 1)) / y.size) * 100
+        return self.accuracy
+    
+    #Saving parameters as a pickle file
+    def save_parameters(self,name):
+        self.model_parameters = {"layers":self.layers,"weights":self.weights,"bias":self.bias}
+        self.param_file = open(str(name)+".pickle",'wb')
+        pickle.dump(self.model_parameters,self.param_file)
+        self.param_file.close()
+    
+    #loading parameters from a pickle file
+    def load_parameters(self,path):
+        self.param_file = open(path+".pickle",'rb')
+        self.model_parameters = pickle.load(self.param_file)
+        self.layers = self.model_parameters["layers"]
+        self.weights = self.model_parameters["weights"]
+        self.bias = self.model_parameters["bias"]
+        self.param_file.close()
+
     #Computing the z term for applying activation
     def compute_z(self,weights, activations, bias):
         z = np.dot(weights,activations) + bias
@@ -211,21 +236,29 @@ class Neuron(Activations,Losses):
     #Adding layers to the model
     def add(self, layer):
         self.layers.append(layer)
+    
+    #For computing and printing accuracy and error
+    def compute_stats(self,y,epoch,val_set=False):
+        self.predicted = self.activations[-1]
+        self.error = self.compute_error(y,self.predicted)
+        self.accuracy = self.compute_accuracy(y.astype(int),np.round(self.predicted).astype(int))
+        if not val_set:
+            print("Test set: accuracy: {}% error: {} epoch: {}/{}".format(round(self.accuracy,2),self.error,epoch+1,self.epochs))
+        else:
+            print("Val set: accuracy: {}% error: {} epoch: {}/{}".format(round(self.accuracy,2),self.error,epoch+1,self.epochs))
 
     #Predicting after training
     def predict(self, test_x):
-        self.test_weights = self.weights
-        self.test_bias = self.bias
         self.test_z = [0 for x in range(len(self.layers))]
         self.test_activations = [0 for x in range(len(self.layers)+1)]
         self.test_activations[0] = test_x.T
         for i in range(len(self.layers)):
-            self.test_z[i] = self.compute_z(self.test_weights[i],self.test_activations[i],self.test_bias[i])
+            self.test_z[i] = self.compute_z(self.weights[i],self.test_activations[i],self.bias[i])
             self.test_activations[i+1] = self.act_dict.get(self.layers[i].activation)(self.test_z[i])
-        print(self.test_activations[-1])
+        return self.test_activations[-1]
 
     #Fitting the neural network on training set
-    def fit(self,X,y,batch_size,print_error=False):
+    def fit(self, X, y, val_x=None, val_y=None, batch_size=None, print_stats=False):
         self.z = [0 for x in range(len(self.layers))]
         self.activations = [0 for x in range(len(self.layers)+1)]
         self.dz = [0 for x in range(len(self.layers))]
@@ -236,19 +269,34 @@ class Neuron(Activations,Losses):
         if not batch_size is None and batch_size < X.T.shape[1] and batch_size > 0: 
             self.X = self.split_data(X.T,batch_size)
             self.y = self.split_data(y.T,batch_size)
-            for _ in range(self.epochs):
+            for epoch in range(self.epochs):
+                self.seeder = np.random.randint(1,1000)
+                np.random.seed(self.seeder)
+                np.random.shuffle(self.X)
+                np.random.seed(self.seeder)
+                np.random.shuffle(self.y)
                 for x_temp,y_temp in zip(self.X,self.y):
-                    self.activations[0] = x_temp 
+                    self.activations[0] = x_temp
                     self.forward_prop()
                     self.back_prop(y_temp)
-                if print_error:
+                if print_stats:
                     self.activations[0] = X.T
                     self.forward_prop()
-                    self.compute_error(y.T)
+                    self.compute_stats(y.T,epoch)
+                    if not (val_x is None or val_y is None):
+                        self.activations[0] = val_x.T
+                        self.forward_prop()
+                        self.compute_stats(val_y.T,epoch,val_set=True)
+
         else:
-            self.activations[0] = X.T
-            self.y = y.T 
-            for _ in range(self.epochs):
+            self.activations[0] = X.T 
+            self.y = y.T
+            for epoch in range(self.epochs):
                 self.forward_prop()
-                self.compute_error(self.y)
+                if print_stats:
+                    self.compute_stats(self.y,epoch)
                 self.back_prop(self.y)
+                if not (val_x is None or val_y is None):
+                    self.activations[0] = val_x.T
+                    self.forward_prop()
+                    self.compute_stats(val_y.T,epoch,val_set=True)
